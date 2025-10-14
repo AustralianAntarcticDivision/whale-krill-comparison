@@ -1,42 +1,54 @@
+
 library(mgcv)
 library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(plotly)
+library(here)
 
+##source log-normal CI function
+source(here('R','log-normCIs.R'))
 
-dat=read.csv("~/Documents/repos/whale-krill/TT_align_allData_13102025.csv")
+##get a version of the data:
+dat=read.csv(here('data','TT_align_allData_13102025.csv'))
 
-names(dat)
-
+##processing
+#times
 dat$timeStamp=as.POSIXct(dat$dt,format='%d/%m/%Y %H:%M', tz='UTC')
 dat$hour=as.numeric(format(dat$timeStamp, "%H"))
-summary(dat$hour)
-#dat$hour_c=sin(dat$hour/24*2*pi)
 dat$day_of_year=as.numeric(format(dat$timeStamp, "%j"))
 summary(dat$day_of_year)
-#dat$day_of_year_c=sin(dat$day_of_year/365*2*pi)
+
+#krill presence-absence
 dat$krill_PA=0
 dat$krill_PA[dat$rho_v>0]=1
 table(dat$krill_PA)
+#minimum detectable krill density:
 min_det=min(dat$rho_v[dat$krill_PA==1])
 dat$rho_min=dat$rho_v+min_det/2
-#datCD=dat[dat$krill_PA==1,]
-#krill explan vars
+
+#deal with centre of mass NaN and assign a 'background value':
 dat$Center_of_mass_min=200
 dat$Center_of_mass_min[which(!is.nan(dat$Center_of_mass))]=
   dat$Center_of_mass[which(!is.nan(dat$Center_of_mass))]
 plot(dat$Center_of_mass_min)
+
+#deal with Corrected length NaN and negative values:
 summary(dat$Corrected_length)
 dat$Corrected_length[which(dat$Corrected_length<0)]=NA
 dat$Corrected_length[which(is.nan(dat$Corrected_length))]=NA
 min_Corrected_length=min(dat$Corrected_length,na.rm=T)
+#assign a background value for Corrected length:
 dat$Corrected_length_min=dat$Corrected_length+min_Corrected_length/2
+
+#deal with Proportion occupied NaN and negative values:
 dat$Proportion_occupied[which(is.nan(dat$Proportion_occupied))]=NA
+#assign a background value for Proportion occupied:
 Proportion_occupied_min=min(dat$Proportion_occupied,na.rm=T)
 dat$Proportion_occupied[is.na(dat$Proportion_occupied)]=Proportion_occupied_min/2
-#gam for "Bm_Ant_ABZ"
 
+##Modelling
+#gam for "Bm_Ant_ABZ"
 
 m1 <- gam(Bm_Ant_ABZ ~  
             s(hour, k=15,bs='cc') + 
@@ -50,10 +62,8 @@ m1 <- gam(Bm_Ant_ABZ ~
           gamma=1.4,
           select=FALSE,
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
-summary(m1)
+summary(m1) #check VIF?
 plot(m1)
-
-
 
 #gam for "Bm_D"
 m2 <- gam(Bm_D ~  
@@ -70,7 +80,6 @@ m2 <- gam(Bm_D ~
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
 summary(m2)
 
-
 #gam for "BD"
 m3 <- gam(BD ~  
             s(hour, k=15,bs='cc') + 
@@ -86,7 +95,7 @@ m3 <- gam(BD ~
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
 summary(m3)
 
-#predictions for the calling (m1,m2 and  m3)
+#predictions for the call models (m1,m2 and  m3)
 preds=data.frame(hour=mean(dat$hour),
                  day_of_year=0:365,
                  solar_lux=mean(dat$solar_lux,na.rm=T),
@@ -102,15 +111,17 @@ preds_all=rbind(preds_m1,preds_m2,preds_m3)
 preds_all$day_of_year=preds$day_of_year
 preds_all$lower=preds_all$fit-2*preds_all$se.fit
 preds_all$upper=preds_all$fit+2*preds_all$se.fit
+
+#plot predictions of the call models:
 ggplot(data=preds_all,aes(x=day_of_year,y=fit,colour=model,group=model))+
-  geom_line(size=1) +
+  geom_line(linewidth=1) +
   geom_ribbon(aes(ymin=lower,ymax=upper,fill=model),alpha=0.4,colour=NA)+
   theme_minimal(base_size = 15)+
   labs(y='Predicted call rate, nbr/hr',x='Day of year')+
   theme(legend.position = 'top')
+ggsave(here('plots','callsTimeSeries.png'))
 
-##Krill mince:
-#krillPA:
+##Krill model:
 mkrill= gam(rho_min ~  
             s(hour, k=15,bs='cc') + 
             s(day_of_year, k=15,bs='cc')+
@@ -159,8 +170,9 @@ ggplot(data=predictions_df,aes(x=day_of_year,y=fit,colour=model,group=model))+
   theme_minimal(base_size = 15)+
   labs(y='Predicted cue rate (nbr/hr) and krill density (g/m**3)',x='Day of year')+
   theme(legend.position = 'top')
-
-#PCA
+ggsave(here('plots','calls_krillTimeSeries.png'))
+########################
+##PCA
 df_pca <- predictions_df %>%  dplyr::select(day_of_year, model, fit) %>%
   tidyr::pivot_wider(
     names_from = model,       # column whose values become new column names
@@ -181,7 +193,6 @@ loadings <- as.data.frame(pca$rotation[, 1:3])
 var_explained <- 100 * (pca$sdev^2 / sum(pca$sdev^2))
 pc_labels <- paste0("PC", 1:3, " (", round(var_explained[1:3], 1), "%)")
 
-library(plotly)
 
 # Arrow scale factor for visibility
 arrow_scale <- 5
@@ -239,3 +250,5 @@ p <- p %>%
   ))
 
 p
+
+#htmlwidgets::saveWidget(p, here('plots','PCA_3D.html'))
