@@ -1,4 +1,5 @@
-
+#devtools::install_github("m-clark/visibly")
+library(visibly)
 library(mgcv)
 library(ggplot2)
 library(tidyr)
@@ -49,7 +50,7 @@ dat$Proportion_occupied[is.na(dat$Proportion_occupied)]=Proportion_occupied_min/
 
 ##Modelling
 #gam for "Bm_Ant_ABZ"
-
+summary(dat$Bm_Ant_ABZ)
 m1 <- gam(Bm_Ant_ABZ ~  
             s(hour, k=15,bs='cc') + 
             s(day_of_year, k=15,bs='cc')+
@@ -60,12 +61,30 @@ m1 <- gam(Bm_Ant_ABZ ~
           method='ML',
           family=gaussian(link='log'),
           gamma=1.4,
-          select=FALSE,
+          select=TRUE,
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
-summary(m1) #check VIF?
+summary(m1)
 plot(m1)
+gam.check(m1)
+concurvity(m1)
 
+m1a <- gam(Bm_Ant_ABZ ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=20,bs='cc')+
+            #s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=TRUE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+concurvity(m1a)
+gam.check(m1a)
+visibly::plot_gam_check(m1a)
 #gam for "Bm_D"
+
 m2 <- gam(Bm_D ~  
             s(hour, k=15,bs='cc') + 
             s(day_of_year, k=15,bs='cc')+
@@ -79,7 +98,23 @@ m2 <- gam(Bm_D ~
           select=TRUE,
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
 summary(m2)
+concurvity(m2)
 
+m2a <- gam(Bm_D ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=15,bs='cc')+
+            #s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=TRUE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(m2a)
+concurvity(m2a)
+gam.check(m2a)
 #gam for "BD"
 m3 <- gam(BD ~  
             s(hour, k=15,bs='cc') + 
@@ -94,6 +129,23 @@ m3 <- gam(BD ~
           select=TRUE,
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
 summary(m3)
+concurvity(m3)
+gam.check(m3)
+m3a <- gam(BD ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=15,bs='cc')+
+            #s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=TRUE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(m3a)
+concurvity(m3a)
+gam.check(m3a)
 
 #predictions for the call models (m1,m2 and  m3)
 preds=data.frame(hour=mean(dat$hour),
@@ -101,11 +153,11 @@ preds=data.frame(hour=mean(dat$hour),
                  solar_lux=mean(dat$solar_lux,na.rm=T),
                  lunar_lux=mean(dat$lunar_lux,na.rm=T),
                  ice=mean(dat$ice,na.rm=T))
-preds_m1=as.data.frame(predict(m1,newdata=preds,type='response',se.fit=TRUE))
+preds_m1=as.data.frame(predict(m1a,newdata=preds,type='response',se.fit=TRUE))
 preds_m1$model='Bm_Ant_ABZ'
-preds_m2=as.data.frame(predict(m2,newdata=preds,type='response',se.fit=TRUE))
+preds_m2=as.data.frame(predict(m2a,newdata=preds,type='response',se.fit=TRUE))
 preds_m2$model='Bm_D'
-preds_m3=as.data.frame(predict(m3,newdata=preds,type='response',se.fit=TRUE))
+preds_m3=as.data.frame(predict(m3a,newdata=preds,type='response',se.fit=TRUE))
 preds_m3$model='BD'
 preds_all=rbind(preds_m1,preds_m2,preds_m3)
 preds_all$day_of_year=preds$day_of_year
@@ -139,8 +191,43 @@ mkrill= gam(rho_min ~
           knots=list(hour=c(0,24),day_of_year=c(0,365)))
 summary(mkrill)
 gam.check(mkrill)
+concurvity(mkrill)
 
+mkrilla= gam(rho_min ~  
+              s(hour, k=15,bs='cc') + 
+              s(day_of_year, k=15,bs='cc')+
+              #s(solar_lux,k=6,bs='cr')+
+              s(lunar_lux,k=6,bs='cr')+
+              s(ice,k=6,bs='cr')+
+              s(Center_of_mass_min,k=6,bs='cr')+
+              s(Corrected_length_min,k=6,bs='cr')+
+              s(Proportion_occupied,k=3,bs='cr'),
+            data=dat,
+            method='ML',
+            family=Gamma(link='log'),
+            gamma=1.4,
+            select=TRUE,
+            knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(mkrilla)
+gam.check(mkrilla)
+concurvity(mkrilla)
 
+mkrillb= gam(rho_min ~  
+               s(day_of_year,hour, k=15) + 
+               #s(day_of_year, k=15,bs='cc')+
+               #s(solar_lux,k=6,bs='cr')+
+               s(lunar_lux,k=6,bs='cr')+
+               s(ice,k=6,bs='cr')+
+               s(Center_of_mass_min,k=6,bs='cr')+
+               s(Corrected_length_min,k=6,bs='cr')+
+               s(Proportion_occupied,k=3,bs='cr'),
+             data=dat,
+             method='ML',
+             family=Gamma(link='log'),
+             gamma=1.4,
+             select=TRUE,
+             knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(mkrillb)
 
 preds_k=data.frame(hour=mean(dat$hour),
                    day_of_year=0:365,
@@ -150,7 +237,7 @@ preds_k=data.frame(hour=mean(dat$hour),
                    Center_of_mass_min=mean(dat$Center_of_mass_min,na.rm=T),
                    Corrected_length_min=mean(dat$Corrected_length_min,na.rm=T),
                    Proportion_occupied=mean(dat$Proportion_occupied,na.rm=T))
-preds_k_all=as.data.frame(predict(mkrill,newdata=preds_k,type='response',se.fit=TRUE))
+preds_k_all=as.data.frame(predict(mkrillb,newdata=preds_k,type='response',se.fit=TRUE))
 preds_k_all$model='krill_density'
 preds_k_all$day_of_year=preds_k$day_of_year
 
