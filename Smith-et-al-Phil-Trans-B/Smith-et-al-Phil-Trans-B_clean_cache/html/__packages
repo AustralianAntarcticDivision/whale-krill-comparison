@@ -1,0 +1,15 @@
+nlme
+mgcv
+ggplot2
+tidyr
+dplyr
+plotly
+here
+cluster
+factoextra
+scales
+viridisLite
+viridis
+patchwork
+gratia
+knitr

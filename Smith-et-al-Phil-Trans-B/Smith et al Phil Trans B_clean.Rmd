@@ -1,0 +1,607 @@
+---
+title: "Whale-Krill comparison GAMs"
+output: html_document
+date: "2025-10-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load in hourly data for krill swarms, whale calls, sea ice and light
+
+```{r Load and massage data, cache=TRUE, warning=FALSE, message=FALSE}
+rm(list=ls())
+
+library(mgcv)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(plotly)
+library(here)
+library(cluster)
+library(factoextra)
+library(scales)
+library(viridis)
+library(patchwork)
+if(!require(plotly)) install.packages("purrr")
+library(gratia)
+library(knitr)
+
+# Define data directory
+data_dir <- "C:/Users/abbie_smi/OneDrive - Antarctic/Documents/GitHub/whale-krill-comparison/Smith-et-al-Phil-Trans-B"
+
+##source log-normal CI function
+func_path <- file.path(data_dir, "/log-normCIs.R")
+source(func_path)
+
+##get the data:
+dat_file <- file.path(data_dir, "/TT_align_swarm_regioncells.csv")
+dat <- read.csv(dat_file)
+
+##processing
+#times
+dat$timeStamp=as.POSIXct(dat$timeVec,format= "%Y-%m-%d %H:%M:%S", tz='UTC')
+dat$hour=as.numeric(format(dat$timeStamp, "%H"))
+dat$day_of_year=as.numeric(format(dat$timeStamp, "%j"))
+summary(dat$day_of_year)
+
+#krill presence-absence
+dat$krill_PA=0
+dat$krill_PA[dat$rho_v>0]=1
+table(dat$krill_PA)
+#minimum detectable krill density:
+min_det=min(dat$rho_v[dat$krill_PA==1])
+dat$rho_min=dat$rho_v+min_det/2
+
+#max krill density in an hour
+max(dat$rho_v, na.rm = TRUE) #max density
+dat$timeVec[max(dat$rho_v, na.rm = TRUE)] #when?
+dat$Center_of_mass[max(dat$rho_v, na.rm = TRUE)] #when?
+
+
+#deal with centre of mass NaN and assign a 'background value':
+dat$Center_of_mass_min=200
+dat$Center_of_mass_min[which(!is.nan(dat$Center_of_mass))]=
+  dat$Center_of_mass[which(!is.nan(dat$Center_of_mass))]
+plot(dat$Center_of_mass_min)
+
+#rename ice variable
+dat$ice = dat$Diff
+
+```
+
+## Observation time series 
+```{r Observation time series}
+
+dat$timeVec <- as.POSIXct(dat$timeVec)
+
+
+# A. Solar (yellow) and Lunar (purple) Lux 
+solar_max <- max(dat$solar_lux, na.rm = TRUE)
+lunar_max <- max(dat$lunar_lux, na.rm = TRUE)
+scale_factor <- solar_max / lunar_max
+
+p1 <- ggplot(dat, aes(x = timeVec)) +
+  geom_line(aes(y = solar_lux), colour = "#FFD700", linewidth = 1) +  # dark yellow
+  geom_line(aes(y = lunar_lux * scale_factor), colour = "#6A0DAD", linewidth = 1) +  # dark purple
+  scale_y_continuous(
+    name = "Solar (lux)",
+    sec.axis = sec_axis(~ . / scale_factor, name = "Lunar (lux)")
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#FFD700"),
+    axis.title.y.right = element_text(color = "#6A0DAD"),
+    axis.text.y.right  = element_text(color = "#6A0DAD"),
+    axis.text.y.left   = element_text(color = "#FFD700")
+  ) +
+  ggtitle("a) Solar irradiance and Lunar illuminance")
+
+
+# B. Ice Draft (dark grey, reversed y-axis)
+p2 <- ggplot(dat, aes(x = timeVec, y = ice)) +
+  geom_line(colour = "grey30", linewidth = 1) +
+  scale_y_reverse(name = "Sea ice draft (m)") +
+  theme_minimal(base_size = 12) +
+  ggtitle("b) Sea ice draft")
+
+# C. Centre of Mass scatter (rho_v colour, thickness size)
+p3 <- ggplot(dat, aes(x = timeVec, y = Center_of_mass,
+                colour = rho_v, size = Thickness_mean)) +
+  geom_point(alpha = 0.2) +  # fully opaque points
+  scale_y_reverse(name = "Centre of Mass (m)") +
+  scale_colour_viridis(
+    option = "plasma",
+    na.value = "grey80",
+    limits = c(0, 100),
+    oob = scales::squish,
+    name = expression("Density (g m^3)") 
+  ) +
+  scale_size_continuous(range = c(1, 5), name = "Thickness (m)") +
+  theme_minimal(base_size = 12) +
+  labs(title = "c) Krill swarms")
+
+# D. Blue Whale Song Detections/hour (purple) 
+p4 <- ggplot(dat, aes(x = timeVec, y = Bm_Ant_ABZ)) +
+  geom_line(colour = "#800080", linewidth = 1) +
+  theme_minimal(base_size = 12) +
+  labs(y = "Detections/hr", title = "d) ABW song")
+
+# E. Blue Whale Downsweeps/hour (magenta)
+p5 <- ggplot(dat, aes(x = timeVec, y = Bm_D)) +
+  geom_line(colour = "#CC4678", linewidth = 1) +
+  theme_minimal(base_size = 12) +
+  labs(y = "Detections/hr", title = "e) ABW downsweeps")
+
+# F. Minke Whale Bioduck/hour (orange)
+p6 <- ggplot(dat, aes(x = timeVec, y = BD)) +
+  geom_line(colour = "#FFA500", linewidth = 1) +
+  theme_minimal(base_size = 12) +
+  labs(y = "Detections/hr", title = "f) AMW bioduck")
+
+# Combine all plots vertically
+combined_plot <- (
+  p1 / p2 / p3 / p4 / p5 / p6
+) + plot_layout(guides = "collect") &
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 8),
+        plot.title = element_text(size = 11, face = "bold"))
+
+combined_plot
+
+```
+
+
+
+## Overlap in raw observations
+Find the dates when ABW and AMW calls overlap at threshold of 10% of the max call detections per hour.
+```{r Raw observations}
+# Day-level total calls
+whale_daily <- dat %>%
+  group_by(day_of_year) %>%
+  summarise(
+    ABW_total = sum(Bm_Ant_ABZ, na.rm = TRUE),
+    BD_total  = sum(BD, na.rm = TRUE)
+  )
+
+# Calculate 10th percentile thresholds for each species
+thresholds <- whale_daily %>%
+  summarise(
+    ABW_thr = max(ABW_total, na.rm = TRUE)*0.1,
+    BD_thr  = max(BD_total, na.rm = TRUE)*0.1
+  )
+
+# Identify overlapping days
+overlap_days <- whale_daily %>%
+  filter(ABW_total > thresholds$ABW_thr & BD_total > thresholds$BD_thr) %>%
+  pull(day_of_year)
+
+overlap_dates <- as.Date(overlap_days, origin = "2021-01-01")
+overlap_days
+overlap_dates
+
+length(overlap_days)/365 *100
+
+# Collapse consecutive dates into ranges (needed in final plots)
+overlap_ranges <- overlap_dates %>%
+  sort() %>%
+  { data.frame(start = .[c(TRUE, diff(.) != 1)], 
+               end = .[c(diff(.) != 1, TRUE)]) }
+
+
+```
+
+
+## Whale call GAMs
+
+```{r Modelling, cache=TRUE, warning=FALSE, message=FALSE}
+##Modelling
+#gam for "ABW Song"
+
+m1 <- gam(Bm_Ant_ABZ ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=15,bs='cc')+
+            s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=FALSE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(m1) 
+
+#gam for "ABW Downsweeps"
+m2 <- gam(Bm_D ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=15,bs='cc')+
+            s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=TRUE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(m2)
+
+#gam for "AMW Bioduck"
+m3 <- gam(BD ~  
+            s(hour, k=15,bs='cc') + 
+            s(day_of_year, k=15,bs='cc')+
+            s(solar_lux,k=6,bs='cr')+
+            s(lunar_lux,k=6,bs='cr')+
+            s(ice,k=6,bs='cr'),
+          data=dat,
+          method='ML',
+          family=gaussian(link='log'),
+          gamma=1.4,
+          select=TRUE,
+          knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(m3)
+
+#predictions for the call models (m1,m2 and  m3)
+preds=data.frame(hour=mean(dat$hour),
+                 day_of_year=0:365,
+                 solar_lux=mean(dat$solar_lux,na.rm=T),
+                 lunar_lux=mean(dat$lunar_lux,na.rm=T),
+                 ice=mean(dat$ice,na.rm=T))
+preds_m1=as.data.frame(predict(m1,newdata=preds,type='response',se.fit=TRUE))
+preds_m1$model='Bm_Ant_ABZ'
+preds_m2=as.data.frame(predict(m2,newdata=preds,type='response',se.fit=TRUE))
+preds_m2$model='Bm_D'
+preds_m3=as.data.frame(predict(m3,newdata=preds,type='response',se.fit=TRUE))
+preds_m3$model='BD'
+preds_all=rbind(preds_m1,preds_m2,preds_m3)
+preds_all$day_of_year=preds$day_of_year
+preds_all$lower=preds_all$fit-2*preds_all$se.fit
+preds_all$upper=preds_all$fit+2*preds_all$se.fit
+
+month_start_days <- c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335)
+
+#plot predictions of the call models:
+ggplot(data=preds_all,aes(x=as.Date(day_of_year,origin='2021-01-01'),
+                          y=fit,colour=model,group=model))+
+  geom_line(linewidth=1) +
+  geom_ribbon(aes(ymin=lower,ymax=upper,fill=model),alpha=0.4,colour=NA)+
+  facet_grid(model~., scales = "free_y")+
+  scale_x_date(date_breaks = "1 month", date_labels = '%b')+
+  theme_minimal(base_size = 12)+
+  labs(y='Predicted call rate, nbr/hr',x='Day of year')+
+  theme(legend.position = 'top')
+
+
+```
+
+
+## Krill swarm GAMs
+
+Here we model krill density using only environmental (non-krill non-whale) covariates. We also model centre of mass the same way. 
+
+```{r Alternate krill models for density and centre of mass, fig.height=7.9, fig.width=6.3, message=FALSE, warning=FALSE, cache=TRUE}
+# Krill swarm properties
+mdensity <- gam(rho_min ~  
+                  s(hour, k=15,bs='cc') + 
+                  s(day_of_year, k=15,bs='cc')+
+                  s(solar_lux,k=6,bs='cr')+
+                  s(lunar_lux,k=6,bs='cr')+
+                  s(ice,k=6,bs='cr'),
+                data=dat,
+                method='ML',
+                family=Gamma(link='log'),
+                gamma=1.4,
+                select=TRUE,
+                knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(mdensity)
+gam.check(mdensity)
+
+mcom= gam(Center_of_mass ~  
+              s(hour, k=15,bs='cc') + 
+              s(day_of_year, k=15,bs='cc')+
+              s(solar_lux,k=6,bs='cr')+
+              s(lunar_lux,k=6,bs='cr')+
+              s(ice,k=6,bs='cr'),
+            data=dat,
+            method='ML',
+            family=Gamma(link='log'),
+            gamma=1.4,
+            select=TRUE,
+            knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(mcom)
+gam.check(mcom)
+
+mthickness= gam(Thickness_mean ~  
+              s(hour, k=15,bs='cc') + 
+              s(day_of_year, k=15,bs='cc')+
+              s(solar_lux,k=6,bs='cr')+
+              s(lunar_lux,k=6,bs='cr')+
+              s(ice,k=6,bs='cr'),
+            data=dat,
+            method='ML',
+            family=Gamma(link='log'),
+            gamma=1.4,
+            select=TRUE,
+            knots=list(hour=c(0,24),day_of_year=c(0,365)))
+summary(mthickness)
+gam.check(mthickness)
+
+preds_mdensity=as.data.frame(predict(mdensity,newdata=preds,type='response',
+                                     se.fit=TRUE))
+preds_mdensity$model='krill_density'
+preds_mcom=as.data.frame(predict(mcom,newdata=preds,type='response',
+                                 se.fit=TRUE))
+preds_mcom$model='centre_of_mass'
+preds_mthickness=as.data.frame(predict(mthickness,newdata=preds,type='response',
+                                       se.fit=TRUE))
+preds_mthickness$model='corrected_thickness'
+
+preds_all2=rbind(preds_m1,preds_m2,preds_m3,
+                 preds_mdensity,
+                 preds_mthickness,
+                 preds_mcom)
+
+preds_all2$day_of_year=0:365
+preds_all2$lower=preds_all2$fit-2*preds_all2$se.fit
+preds_all2$upper=preds_all2$fit+2*preds_all2$se.fit
+
+preds_all2$model<-factor(preds_all2$model, 
+                             levels=c('krill_density','centre_of_mass',
+                                     'corrected_thickness',
+                                     'Bm_Ant_ABZ','Bm_D','BD'))
+my_labels <- as_labeller(c(krill_density = "Krill density\n(g/m^3)",
+                           centre_of_mass="Centre of mass\ndepth (m)",
+                           corrected_thickness="Thickness\n(m)",
+                           Bm_Ant_ABZ='ABW Song\n(Detections/h)',
+                           Bm_D = "Downsweep\n(Detections/h)",
+                           BD='Bioduck\n(Detections/h)'))
+
+ggplot(data=preds_all2,aes(x=as.Date(day_of_year,origin='2021-01-01'),
+                          y=fit,colour=model,group=model))+
+  geom_line(linewidth=1) +
+  geom_ribbon(aes(ymin=lower,ymax=upper,fill=model),alpha=0.4,colour=NA)+
+  facet_wrap(model~., scales = "free_y", nrow = length(unique(preds_all2$model)),
+             strip.position = "left", 
+             labeller=my_labels)+
+  scale_x_date(date_breaks = "1 month", date_labels = '%b')+
+  scale_color_viridis_d(option="plasma",end = 0.7)+
+  scale_fill_viridis_d(option="plasma",end = 0.7)+
+  ylab(NULL) + xlab(NULL)+
+  theme_minimal(base_size = 12)+
+  theme(legend.position = 'none')
+
+```
+
+## Statistics calculated for model predictions
+```{r Statistics}
+mean(preds_all2$fit[preds_all2$model == 'krill_density' ])
+
+# approximate lag between ABW song peak and krill density decline
+lags <- preds_all2 %>%
+  filter(model %in% c("Bm_Ant_ABZ","krill_density")) %>%
+  group_by(model) %>%
+  summarise(peak_day = day_of_year[which.max(fit)]) %>%
+  summarise(lag_days = diff(peak_day))
+lags
+
+# define overlapping periods where both predicted fits > small threshold
+thresholds <- preds_all2 %>%
+  filter(model %in% c("Bm_Ant_ABZ", "BD")) %>%
+  group_by(model) %>%
+  summarise(thr = max(fit, na.rm = TRUE)*0.025) # 10% based on false detection rate for ABW
+
+overlap_days <- preds_all2 %>%
+  filter(model %in% c("Bm_Ant_ABZ", "BD")) %>%
+  select(day_of_year, model, fit) %>%
+  left_join(thresholds, by = "model") %>%
+  mutate(detected = fit > thr) %>%
+  select(-fit, -thr) %>%
+  pivot_wider(names_from = model, values_from = detected) %>%
+  mutate(overlap = Bm_Ant_ABZ & BD) %>%
+  summarise(
+    n_overlap_days = sum(overlap, na.rm = TRUE),
+    total_days = n(),
+    prop_overlap = mean(overlap, na.rm = TRUE),
+    pct_overlap = 100 * prop_overlap
+  )
+
+overlap_days
+
+# Join thresholds back and identify overlap days
+overlap_day_list <- preds_all2 %>%
+  filter(model %in% c("Bm_Ant_ABZ", "BD")) %>%
+  select(day_of_year, model, fit) %>%
+  left_join(thresholds, by = "model") %>%
+  mutate(detected = fit > thr) %>%
+  select(-fit, -thr) %>%
+  pivot_wider(names_from = model, values_from = detected) %>%
+  filter(Bm_Ant_ABZ == TRUE & BD == TRUE) %>%
+  pull(day_of_year)
+
+overlap_dates <- as.Date(overlap_day_list, origin = "2021-01-01")
+overlap_dates
+
+
+# Seasonal summary of uncertainty
+preds_all3 <- preds_all2 %>%
+  mutate(season = case_when(
+    day_of_year >= 80  & day_of_year < 172 ~ "spring",  # Mar 21 - Jun 20
+    day_of_year >= 172 & day_of_year < 264 ~ "summer",  # Jun 21 - Sep 20
+    day_of_year >= 264 & day_of_year < 355 ~ "autumn",  # Sep 21 - Dec 20
+    TRUE                                   ~ "winter"   # Dec 21 - Mar 20
+  ))
+
+# Summarise mean and uncertainty for each model by season
+seasonal_summary <- preds_all3 %>%
+  group_by(model, season) %>%
+  summarise(
+    mean_fit = mean(fit, na.rm = TRUE),
+    se_fit   = mean(se.fit, na.rm = TRUE),        # mean standard error
+    lower_ci = mean(lower, na.rm = TRUE),        # mean lower 95% CI
+    upper_ci = mean(upper, na.rm = TRUE),        # mean upper 95% CI
+    .groups = "drop"
+  )
+
+seasonal_summary
+
+#Max krill density
+sort(unique(preds_all2$fit[preds_all2$model == 'krill_density']), decreasing = TRUE)[65]
+sort(unique(preds_all2$lower[preds_all2$model == 'krill_density']), decreasing = TRUE)[65]
+sort(unique(preds_all2$upper[preds_all2$model == 'krill_density']), decreasing = TRUE)[65]
+
+```
+
+## Modelled predictions time series
+
+```{r Modelled predictions time series}
+
+preds_all2 <- preds_all2 %>%
+  mutate(
+    fit = ifelse(model == "centre_of_mass", -fit, fit),
+    lower = ifelse(model == "centre_of_mass", -lower, lower),
+    upper = ifelse(model == "centre_of_mass", -upper, upper)
+  )
+
+pmod <- ggplot(data = preds_all2, aes(x = as.Date(day_of_year, origin = '2021-01-01'),
+                              y = fit, colour = model, group = model)) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = model),
+              alpha = 0.4, colour = NA) +
+  facet_wrap(model ~ ., scales = "free_y", nrow = length(unique(preds_all2$model)),
+             strip.position = "left", labeller = my_labels) +
+  scale_x_date(date_breaks = "1 month", date_labels = '%b') +
+  scale_color_viridis_d(option = "plasma", end = 0.7) +
+  scale_fill_viridis_d(option = "plasma", end = 0.7) +
+  ylab(NULL) + xlab(NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = 'none') +
+  # Fix y-axis labels for centre_of_mass facet only
+  scale_y_continuous(labels = function(x) abs(x))
+
+```
+
+## Visualise as 2D surface plots 
+
+```{r DOY HOD surface plots, fig.height=8, fig.width=6.5, warning=FALSE}
+season_starts <- c(1, 60, 152, 244, 335, 365)
+season_labels <- c('Summer','Autumn', 'Winter', 'Spring', 'Summer', '-')
+
+par(mfrow=c(3,2))
+nLev=3
+
+mgcv::vis.gam(mdensity,view = c('day_of_year','hour'),type='response', 
+        main='Krill density',
+        plot.type='contour', color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3) 
+
+mgcv::vis.gam(mcom,view = c('day_of_year','hour'),type='response',
+        main='Centre of Mass',
+        plot.type='contour', color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3)  
+
+mgcv::vis.gam(mthickness,view = c('day_of_year','hour'),type='response',
+        main='Thickness',
+        plot.type='contour', color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3)  
+
+mgcv::vis.gam(m1,view = c('day_of_year','hour'),type='response',
+        main='ABZ',
+        plot.type='contour',color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3)  
+
+mgcv::vis.gam(m2,view = c('day_of_year','hour'),type='response',
+        main='Downsweep', 
+        plot.type='contour',color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3)  
+
+mgcv::vis.gam(m3,view = c('day_of_year','hour'),type='response',
+        main='Bioduck',
+        plot.type='contour', color='gray',contour.col='darkorange',nlevels=nLev)
+axis(1, at = season_starts, labels = season_labels, line = 3)  
+
+```
+
+## Distance matrix and clustering on GAM
+
+```{r Clusters on time series}
+wide_preds <- reshape(preds_all2[, c("day_of_year", "fit", "model")],
+                      timevar = "model",
+                      idvar = "day_of_year",
+                      direction = "wide")
+
+pred_matrix <- wide_preds[, -1]  # remove day_of_year
+scaled_matrix <- scale(pred_matrix)
+dist_matrix <- dist(scaled_matrix, method = "euclidean")
+hc <- hclust(dist_matrix, method = "ward.D2")  # or "complete", "average", etc.
+plot(hc, main = "Hierarchical Clustering of GAM Predictions", xlab = "Days", sub = "")
+fviz_nbclust(as.matrix(dist_matrix), FUN = hcut, method = "silhouette", hc_method = "average")
+
+clusters <- cutree(hc, k = 2)  # Number of clusters from above = 2
+wide_preds$cluster <- clusters
+
+long_preds <- wide_preds %>%
+  pivot_longer(
+    cols = starts_with("fit"),  # only pivot the fit columns
+    names_to = "variable",
+    values_to = "fit"
+  ) %>%
+  mutate(variable = sub("^fit\\.", "", variable)) %>%
+  arrange(variable, day_of_year) %>%
+  group_by(variable) %>%
+  mutate(run_id = cumsum(cluster != lag(cluster, default = first(cluster)))) %>%
+  ungroup()
+
+
+cluster_summary <- long_preds %>%
+  group_by(cluster, variable) %>%
+  summarise(
+    n_days = n_distinct(day_of_year),
+    mean_fit = mean(fit, na.rm = TRUE),
+    sd_fit = sd(fit, na.rm = TRUE),
+    start_day = min(day_of_year),
+    end_day = max(day_of_year),
+    .groups = "drop"
+  ) %>%
+  arrange(cluster, variable)
+
+kable(cluster_summary, digits = 2, caption = "Summary of cluster properties")
+
+
+preds_all2$cluster = long_preds$cluster
+preds_all2$run_id = long_preds$run_id
+
+
+ggplot(data = preds_all2, 
+       aes(x = as.Date(day_of_year, origin = '2021-01-01'),
+           y = fit,
+           group = interaction(cluster, run_id),
+           color = factor(cluster),
+           fill = factor(cluster))) +
+  # Shaded rectangles for overlap periods
+  geom_rect(data = overlap_ranges,
+            inherit.aes = FALSE,
+            aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+            fill = "grey30", alpha = 0.3) +
+  
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.4, colour = NA) +
+  geom_line(linewidth = 1) +
+  facet_wrap(model ~ ., 
+             scales = "free_y", 
+             nrow = length(unique(preds_all2$model)),
+             strip.position = "left", 
+             labeller = my_labels) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  scale_color_manual(values = c("1" = "#0D0887", "2" = "#F87C36")) +
+  scale_fill_manual(values = c("1" = "#0D0887", "2" = "#F87C36")) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+
+
+```
+
+
+
+
