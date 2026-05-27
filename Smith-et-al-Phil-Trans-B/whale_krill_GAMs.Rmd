@@ -43,7 +43,7 @@ if (!require(purrr)) install.packages("purrr")
 ```{r load-data, cache=TRUE, warning=FALSE, message=FALSE}
 
 # --- File paths ---------------------------------------------------------------
-data_dir  <- "C:/Users/abbie_smi/OneDrive - Antarctic/Data/R/KOMBI03 whales/GAM - Brian/clean"
+data_dir  <- "c:\\Users\\DCCEEW\\Documents\\AcousticPreyFieldSegregation-main\\"# "C:/Users/abbie_smi/OneDrive - Antarctic/Data/R/KOMBI03 whales/GAM - Brian/clean"
 func_path <- file.path(data_dir, "log-normCIs.R")
 dat_file  <- file.path(data_dir, "TT_align_swarm_regioncells.csv")
 
