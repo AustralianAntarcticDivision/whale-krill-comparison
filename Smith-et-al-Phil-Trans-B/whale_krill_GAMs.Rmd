@@ -21,7 +21,6 @@ rm(list = ls())
 library(mgcv)       # GAMs
 library(ggplot2)    # plotting
 library(tidyr)      # data reshaping
-library(dplyr)      # data manipulation
 library(plotly)     # interactive plots
 library(here)       # relative file paths
 library(cluster)    # clustering
@@ -36,25 +35,27 @@ library(suncalc)    # sunrise/sunset times
 library(ggh4x)      # per-facet axis scales
 
 if (!require(purrr)) install.packages("purrr")
-
+library(dplyr)      # data manipulation
 ```
 
 
 ```{r load-data, cache=TRUE, warning=FALSE, message=FALSE}
 
 # --- File paths ---------------------------------------------------------------
-data_dir  <- "c:\\Users\\DCCEEW\\Documents\\AcousticPreyFieldSegregation-main\\"# "C:/Users/abbie_smi/OneDrive - Antarctic/Data/R/KOMBI03 whales/GAM - Brian/clean"
-func_path <- file.path(data_dir, "log-normCIs.R")
-dat_file  <- file.path(data_dir, "TT_align_swarm_regioncells.csv")
+#data_dir  <- "c:\\Users\\DCCEEW\\Documents\\AcousticPreyFieldSegregation-main\\"# "C:/Users/abbie_smi/OneDrive - Antarctic/Data/R/KOMBI03 whales/GAM - Brian/clean"
+#func_path <- file.path(data_dir, "log-normCIs.R")
+#dat_file  <- file.path(data_dir, "TT_align_swarm_regioncells.csv")
 
 # Source log-normal confidence interval helper function
-source(func_path)
+source(here::here('R', "log-normCIs.R"))
 
 # --- Load data ----------------------------------------------------------------
-dat <- read.csv(dat_file)
-
+#dat <- read.csv(dat_file)
+dat<-read.csv(here::here('data','TT_align_swarm_regioncells.csv'))
 # --- Time variables -----------------------------------------------------------
 dat$timeStamp  <- as.POSIXct(dat$timeVec, format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+#dat$timeStamp  <- as.POSIXct(dat$dt, format = "%d/%m/%Y %H:%M", tz = "UTC")
+
 dat$hour       <- as.numeric(format(dat$timeStamp, "%H"))
 dat$day_of_year <- as.numeric(format(dat$timeStamp, "%j"))
 dat$month      <- as.integer(format(dat$timeStamp, "%m"))
@@ -355,8 +356,9 @@ pp <- ggpubr::ggarrange(
   common.legend = TRUE,
   legend        = "bottom"
 )
-pp
-ggsave(file.path(data_dir, "diel_comparison.png"), width = 9, height = 12)
+
+ggsave(here::here("plots","diel_comparison.png"), width = 9, height = 12)
+#ggsave(file.path(data_dir, "diel_comparison.png"), width = 9, height = 12)
 
 # Summary stats by predator state and diel period
 summary_stats_diel <- dat %>%
