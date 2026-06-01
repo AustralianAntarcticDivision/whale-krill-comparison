@@ -1,15 +1,14 @@
-[File: 10.1KB, 296 lines, showing lines 1-296]
-# Marginal prediction plots for m1
+# Marginal prediction plots for m1 (or any of the other models) 
 # Each predictor varied over its observed range; all others held at their means.
 
-library(tidyverse)
+#run whale_krill_GAMs.Rmd first.
 
 # Predictor means (used to hold non-focal variables constant)
 means <- dat |>
   summarise(across(c(hour, day_of_year, solar_lux, lunar_lux, ice), mean, na.rm = TRUE))
 
 # Build a marginal prediction data frame for a single variable
-make_marginal <- function(var, n = 200) {
+make_marginal <- function(var, n = 200,model) {
   seq_vals <- seq(min(dat[[var]], na.rm = TRUE),
                   max(dat[[var]], na.rm = TRUE),
                   length.out = n)
@@ -17,7 +16,7 @@ make_marginal <- function(var, n = 200) {
   grid <- means[rep(1, n), ]
   grid[[var]] <- seq_vals
   
-  pr <- predict(m1, newdata = grid, type = "link", se.fit = TRUE)
+  pr <- predict(model, newdata = grid, type = "link", se.fit = TRUE)
   
   # CIs computed on link scale then back-transformed to avoid negative bounds
   data.frame(
@@ -39,7 +38,7 @@ var_labels <- c(
   ice         = "Ice concentration"
 )
 
-marg_df <- lapply(vars, make_marginal) |> bind_rows()
+marg_df <- lapply(vars, make_marginal,model=m1) |> bind_rows()
 
 # Rug data: observed values of each predictor
 rug_df <- dat |>
@@ -139,7 +138,7 @@ ggplot(doy_dates, aes(date, fit)) +
 # are held at their means. Fill is sqrt-scaled to reduce dominance of the
 # seasonal peak.
 
-make_bivariate <- function(var1, var2, n = 50) {
+make_bivariate <- function(var1, var2, n = 50,model,dat) {
   v1_seq <- seq(min(dat[[var1]], na.rm = TRUE), max(dat[[var1]], na.rm = TRUE), length.out = n)
   v2_seq <- seq(min(dat[[var2]], na.rm = TRUE), max(dat[[var2]], na.rm = TRUE), length.out = n)
   
@@ -147,7 +146,7 @@ make_bivariate <- function(var1, var2, n = 50) {
   names(grid) <- c(var1, var2)
   for (v in setdiff(vars, c(var1, var2))) grid[[v]] <- means[[v]]
   
-  pr <- predict(m1, newdata = grid, type = "link", se.fit = FALSE)
+  pr <- predict(model, newdata = grid, type = "link", se.fit = FALSE)
   grid$fit  <- exp(pr)
   grid$var1 <- var1
   grid$var2 <- var2
@@ -155,7 +154,7 @@ make_bivariate <- function(var1, var2, n = 50) {
 }
 
 pairs   <- combn(vars, 2, simplify = FALSE)
-biv_df  <- lapply(pairs, function(p) make_bivariate(p[1], p[2])) |> bind_rows()
+biv_df  <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=m1)) |> bind_rows()
 
 short_labels <- c(
   hour        = "Hour",
@@ -255,7 +254,7 @@ tile_df <- crossing(season = season_levels, focal_var = focal_vars) |>
     grid$day_of_year  <- sm$day_of_year
     grid[[focal_var]] <- sm[[focal_var]]
     
-    pr <- predict(mdensity_int, newdata = grid, type = "link", se.fit = FALSE)
+    pr <- predict(mdensity, newdata = grid, type = "link", se.fit = FALSE)
     tibble(season = season, focal_var = focal_var, fit = exp(as.numeric(pr)))
   }) |>
   mutate(
@@ -268,7 +267,7 @@ ggplot(tile_df, aes(x = focal_var, y = season, fill = fit)) +
   geom_tile(colour = "white", linewidth = 0.5) +
   geom_text(aes(label = round(fit, 1)), size = 3.5) +
   scale_fill_viridis_c( trans = "log",
-                       name = "Krill density")#Predicted\nBm_Ant_ABZ") +
+                       name = "Krill density") + #Predicted\nBm_Ant_ABZ")
   labs(
     x        = NULL,
     y        = NULL,
@@ -279,67 +278,35 @@ ggplot(tile_df, aes(x = focal_var, y = season, fill = fit)) +
   theme(panel.grid  = element_blank(),
         axis.text.x = element_text(angle = 20, hjust = 1))
 
-##interaction term
-m1_ti <- gam(
-  Bm_Ant_ABZ ~ s(hour, k = 15, bs = "cc") +
-    s(day_of_year, k = 15, bs = "cc") +
-    s(solar_lux, k = 6, bs = "cr") +
-    s(lunar_lux, k = 6, bs = "cr") +
-    s(ice, k = 6, bs = "cr") +
-    ti(hour, solar_lux, bs = c("cc", "cr"), k = c(8, 6)),
-  family = gaussian(link = "log"),
-  data   = dat,
-  method = "ML"
-)
-
-summary(m1_ti)
 
 ##################################################
 #KRILL DENSITY
-mdensity_int=update(mdensity, . ~ . +ti(hour, solar_lux, bs = c("cc", "cr"), k = c(8, 6)))
-summary(mdensity_int)
-
+#mdensity_int=update(mdensity, . ~ . +ti(hour, solar_lux, bs = c("cc", "cr"), k = c(8, 6)))
+#summary(mdensity_int)
+#concurvity(mdensity) #fail!
 #KRILL SWARMS(?) CENTRE OF MASS
-mcom_int<-update(mcom, . ~ . +ti(hour, solar_lux, bs = c("cc", "cr"), k = c(8, 6)))
-summary(mcom_int)
+#mcom_int<-update(mcom, . ~ . +ti(hour, solar_lux, bs = c("cc", "cr"), k = c(8, 6)))
+#summary(mcom_int)
 
 ################################################
-library(tidyverse)
 
-# 2D marginal prediction grid for a pair of variables
-make_bivariate <- function(var1, var2, n = 50,modObj) {
-  v1_seq <- seq(min(dat[[var1]], na.rm = TRUE), max(dat[[var1]], na.rm = TRUE), length.out = n)
-  v2_seq <- seq(min(dat[[var2]], na.rm = TRUE), max(dat[[var2]], na.rm = TRUE), length.out = n)
-
-  grid <- expand.grid(v1 = v1_seq, v2 = v2_seq)
-  names(grid) <- c(var1, var2)
-
-  # Fill remaining predictors at their means
-  for (v in setdiff(vars, c(var1, var2))) grid[[v]] <- means[[v]]
-
-  pr <- predict(modObj, newdata = grid, type = "link", se.fit = FALSE)
-
-  grid$fit <- exp(pr)
-  grid$var1 <- var1
-  grid$var2 <- var2
-  grid
-}
 
 vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice")
 pairs <- combn(vars, 2, simplify = FALSE)
 
-biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],modObj=mcom_int)) |> bind_rows()
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity)) |> bind_rows()
 
 cat("Pairs computed:", length(pairs), "\n")
 cat("Total rows:", nrow(biv_df), "\n")
 
+z_rng<-range(biv_df$fit)
 library(patchwork)
 
 n_vars <- length(vars)
 
 # Build 5×5 grid: lower triangle = heatmap, diagonal = label, upper = spacer
 grid_plots <- vector("list", n_vars ^ 2)
-
+range(biv_df$fit)
 for (col in seq_len(n_vars)) {
   for (row in seq_len(n_vars)) {
     idx <- (row - 1) * n_vars + col
@@ -357,7 +324,16 @@ for (col in seq_len(n_vars)) {
       
       p <- ggplot(df, aes(x = .data[[v1]], y = .data[[v2]], fill = fit)) +
         geom_raster(interpolate = TRUE) +
-        scale_fill_viridis_c(option = "magma", trans = "sqrt", guide = "none") +
+        geom_contour(aes(z = fit), colour = "white", alpha = 0.5, linewidth = 0.3) +
+        #scale_fill_viridis_c(option = "magma", trans = "log", 
+        #                     limits=z_rng ,guide = "none") +
+        scale_fill_viridis_c(
+          option = "magma",
+          trans = "log",
+          limits = z_rng,
+          name = "Krill density",#centre\nof mass",
+          labels = scales::label_number(accuracy = 0.1)
+        )
         theme_bw(base_size = 7) +
         theme(axis.title  = element_blank(),
               plot.margin = margin(2, 2, 2, 2))
@@ -376,11 +352,17 @@ for (col in seq_len(n_vars)) {
   }
 }
 
-wrap_plots(grid_plots, ncol = n_vars) +
+p_final <- wrap_plots(grid_plots, ncol = n_vars) +
+  plot_layout(guides = "collect") +
   plot_annotation(
-    title    = "Pairwise marginal predictions from krill centre of mass",
-    subtitle = "Lower triangle: Krill centre of mass (sqrt-scaled fill) | others held at their means"
+    title = "Pairwise marginal predictions from krill density",
+    subtitle = "Lower triangle: Krill density | others held at their means"
+  ) &
+  theme(
+    legend.position = "right"
   )
+
+p_final
 
 ##################################################
 #MVN GAM:
@@ -453,5 +435,145 @@ data.frame(
   delta_AIC  = round(c(aic_mvn, aic_sep) - min(c(aic_mvn, aic_sep)), 2)
 )
 
+#predator models
+  data.frame(
+    model      = c("bivariate mvn", "two univariate GAMs"),
+    logLik     = round(c(ll_mvn, ll_sep), 2),
+    df         = round(c(df_mvn, df_sep), 2),
+    AIC        = round(c(aic_mvn, aic_sep), 2),
+    delta_AIC  = round(c(aic_mvn, aic_sep) - min(c(aic_mvn, aic_sep)), 2)
+  )
 
-            
+################################################################################
+plot(mdensity)
+#ice in mdensity is rubbish
+#see if we can use a linear form for ice.
+mdensity_Step=update(mdensity,select=TRUE)
+plot(mdensity_Step,pages=1)
+mdensity_snas_ice<-update (mdensity_Step, .~.-s(ice, k = 6, bs = "cr"))
+plot(mdensity_snas_ice,pages=1)
+summary(mdensity_snas_ice)
+AIC(mdensity_snas_ice)
+#add ice back in as a linear term:
+mdensity_lin_ice<-update (mdensity_snas_ice, .~.+ice)
+plot(mdensity_lin_ice,pages=1)
+summary(mdensity_lin_ice)
+#lets drop ice from the model and try mdensity_Step_Bm_Ant_ABZ
+mdensity_Step_Bm_Ant_ABZ<-update (mdensity_snas_ice, .~.+s(Bm_Ant_ABZ,bs='cr',k=5))
+plot(mdensity_Step_Bm_Ant_ABZ,pages=1)
+summary(mdensity_Step_Bm_Ant_ABZ)
+concurvity(mdensity_Step_Bm_Ant_ABZ)
+AIC(mdensity_Step_Bm_Ant_ABZ) - AIC(mdensity_snas_ice) #no improvement in AIC
+#no point in keeping mdensity_Step_Bm_Ant_ABZ
+
+#Bm_D:
+mdensity_whale_Bm_D<- update (mdensity_snas_ice, .~.+s(Bm_D,bs='cr',k=5))
+plot(mdensity_whale_Bm_D,pages=1)
+summary(mdensity_whale_Bm_D)
+concurvity(mdensity_whale_Bm_D)
+AIC(mdensity_whale_Bm_D) - AIC(mdensity_snas_ice) #not enough improvement in AIC
+
+#BD
+mdensity_whale_BD<- update (mdensity_snas_ice, .~.+s(BD,bs='cr',k=5))
+plot(mdensity_whale_BD,pages=1)
+summary(mdensity_whale_BD)
+concurvity(mdensity_whale_BD)
+AIC(mdensity_whale_BD) - AIC(mdensity_snas_ice) #BIG improvement in AIC
+
+#BD + Bm_D
+mdensity_whale_BDplusBm_D<- update (mdensity_whale_BD, .~.+s(Bm_D,bs='cr',k=5))
+plot(mdensity_whale_BDplusBm_D,pages=1)
+summary(mdensity_whale_BD)
+concurvity(mdensity_whale_BD)
+AIC(mdensity_whale_BDplusBm_D) - AIC(mdensity_snas_ice) #KEEP THIS ONE
+
+#Lets try adding ice back in:
+mdensity_whale_BDplusBm_D_ice<- update (mdensity_whale_BDplusBm_D, .~.+ice)
+plot(mdensity_whale_BDplusBm_D_ice,pages=1)
+summary(mdensity_whale_BDplusBm_D_ice)
+concurvity(mdensity_whale_BDplusBm_D_ice)
+AIC(mdensity_whale_BDplusBm_D_ice) - AIC(mdensity_whale_BDplusBm_D) #KEEP THIS ONE TOO
+
+##################################################################################
+
+vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice","BD","Bm_D")
+means <- dat |>
+  summarise(across(c(hour, day_of_year, solar_lux, lunar_lux, ice, BD, Bm_D), mean, na.rm = TRUE))
+pairs <- combn(vars, 2, simplify = FALSE)
+
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],dat=dat,
+                                                   model=mdensity_whale_BDplusBm_D_ice)) |> bind_rows()
+
+cat("Pairs computed:", length(pairs), "\n")
+cat("Total rows:", nrow(biv_df), "\n")
+
+short_labels<-c(short_labels,c('BD','Bm_D'))
+names(short_labels)[6:7]<-c('BD','Bm_D')
+
+z_rng<-range(biv_df$fit)
+library(patchwork)
+
+n_vars <- length(vars)
+
+# Build 7×7 grid: lower triangle = heatmap, diagonal = label, upper = spacer
+grid_plots <- vector("list", n_vars ^ 2)
+range(biv_df$fit)
+for (col in seq_len(n_vars)) {
+  for (row in seq_len(n_vars)) {
+    idx <- (row - 1) * n_vars + col
+    
+    if (row == col) {
+      grid_plots[[idx]] <- ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = short_labels[vars[row]], size = 3.5, fontface = "bold") +
+        theme_void()
+      
+    } else if (row > col) {
+      v1 <- vars[col]   # x-axis variable (column)
+      v2 <- vars[row]   # y-axis variable (row)
+      df <- biv_df |> filter(var1 == v1, var2 == v2)
+      
+      p <- ggplot(df, aes(x = .data[[v1]], y = .data[[v2]], fill = fit)) +
+        geom_raster(interpolate = TRUE) +
+        geom_contour(aes(z = fit), colour = "white", alpha = 0.5, linewidth = 0.3) +
+        #scale_fill_viridis_c(option = "magma", trans = "log", 
+        #                     limits=z_rng ,guide = "none") +
+        scale_fill_viridis_c(
+          option = "magma",
+          trans = "log",
+          limits = z_rng,
+          name = "Krill density",#centre\nof mass",
+          labels = scales::label_number(accuracy = 0.1)
+        )
+      theme_bw(base_size = 7) +
+        theme(axis.title  = element_blank(),
+              plot.margin = margin(2, 2, 2, 2))
+      
+      # Suppress axis text except on outer edges
+      if (row != n_vars) p <- p + theme(axis.text.x  = element_blank(),
+                                        axis.ticks.x = element_blank())
+      if (col != 1)      p <- p + theme(axis.text.y  = element_blank(),
+                                        axis.ticks.y = element_blank())
+      
+      grid_plots[[idx]] <- p
+      
+    } else {
+      grid_plots[[idx]] <- plot_spacer()
+    }
+  }
+}
+
+p_final <- wrap_plots(grid_plots, ncol = n_vars) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Pairwise marginal predictions from krill density",
+    subtitle = "Lower triangle: Krill density | others held at their means"
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+p_final
+
+##################################################
+

@@ -14,7 +14,7 @@ Load hourly passive acoustic detections, active acoustic krill swarm metrics,
 sea ice draft, and light (solar/lunar) data. Derive key variables used throughout
 the analysis.
 
-```{r load-packages, cache=TRUE, warning=FALSE, message=FALSE}
+```{r load-packages, cache=FALSE, warning=FALSE, message=FALSE}
 rm(list = ls())
 
 # --- Libraries ----------------------------------------------------------------
@@ -589,6 +589,12 @@ ggplot(data = preds_all,
 Fit GAMs to krill density, centre of mass depth, and mean thickness using
 the same environmental covariates as the whale call models (no whale terms).
 Gamma family with log link appropriate for positive continuous response variables.
+
+#```{r krill-gam-nan}
+#summary(dat$rho_min)
+#summary(dat$Center_of_mass)
+#summary(dat$Thickness_mean)
+#```
 
 ```{r krill-gams, fig.height=7.9, fig.width=6.3, cache=TRUE, warning=FALSE, message=FALSE, dependson=c("load-data", "predator-presence", "diel-classification")}
 # --- Krill density ------------------------------------------------------------

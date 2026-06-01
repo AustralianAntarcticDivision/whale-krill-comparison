@@ -1115,6 +1115,7 @@ ggplot(data = preds_all,
 using the same environmental covariates as the whale call models (no
 whale terms). Gamma family with log link appropriate for positive
 continuous response variables.</p>
+<p>#<code>{r krill-gam-nan} #summary(dat$rho_min) #summary(dat$Center_of_mass) #summary(dat$Thickness_mean) #</code></p>
 <pre class="r"><code># --- Krill density ------------------------------------------------------------
 mdensity &lt;- gam(
   rho_min ~
