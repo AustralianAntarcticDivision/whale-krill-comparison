@@ -576,4 +576,88 @@ p_final <- wrap_plots(grid_plots, ncol = n_vars) +
 p_final
 
 ##################################################
+#Centre of mass
+plot(mcom,pages=1) # suggest solar and lunar are U/S
+concurvity(mcom) #solar should go
+mcom2<-update(mcom,select=TRUE)
+plot(mcom2,pages=1) # suggest solar and lunar are U/S
 
+mcom_drop_solar<-update(mcom2,.~.-s(solar_lux, k = 6, bs = "cr"))
+plot(mcom_drop_solar,pages=1) # suggest lunar is U/S
+mcom_drop_solar_lunar<-update(mcom_drop_solar,.~.-s(lunar_lux, k = 6, bs = "cr"))
+plot(mcom_drop_solar_lunar,pages=1)
+concurvity(mcom_drop_solar_lunar) #all good.
+
+vars <- c("hour", "day_of_year", "ice")
+pairs <- combn(vars, 2, simplify = FALSE)
+
+
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mcom_drop_solar_lunar,dat=dat)) |> bind_rows()
+
+cat("Pairs computed:", length(pairs), "\n")
+cat("Total rows:", nrow(biv_df), "\n")
+
+z_rng<-range(biv_df$fit)
+library(patchwork)
+
+n_vars <- length(vars)
+
+# Build 5×5 grid: lower triangle = heatmap, diagonal = label, upper = spacer
+grid_plots <- vector("list", n_vars ^ 2)
+range(biv_df$fit)
+for (col in seq_len(n_vars)) {
+  for (row in seq_len(n_vars)) {
+    idx <- (row - 1) * n_vars + col
+    
+    if (row == col) {
+      grid_plots[[idx]] <- ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = short_labels[vars[row]], size = 3.5, fontface = "bold") +
+        theme_void()
+      
+    } else if (row > col) {
+      v1 <- vars[col]   # x-axis variable (column)
+      v2 <- vars[row]   # y-axis variable (row)
+      df <- biv_df |> filter(var1 == v1, var2 == v2)
+      
+      p <- ggplot(df, aes(x = .data[[v1]], y = .data[[v2]], fill = fit)) +
+        geom_raster(interpolate = TRUE) +
+        geom_contour(aes(z = fit), colour = "white", alpha = 0.5, linewidth = 0.3) +
+        #scale_fill_viridis_c(option = "magma", trans = "log", 
+        #                     limits=z_rng ,guide = "none") +
+        scale_fill_viridis_c(
+          option = "magma",
+          trans = "log",
+          limits = z_rng,
+          name = "Krill density",#centre\nof mass",
+          labels = scales::label_number(accuracy = 0.1)
+        )
+      theme_bw(base_size = 7) +
+        theme(axis.title  = element_blank(),
+              plot.margin = margin(2, 2, 2, 2))
+      
+      # Suppress axis text except on outer edges
+      if (row != n_vars) p <- p + theme(axis.text.x  = element_blank(),
+                                        axis.ticks.x = element_blank())
+      if (col != 1)      p <- p + theme(axis.text.y  = element_blank(),
+                                        axis.ticks.y = element_blank())
+      
+      grid_plots[[idx]] <- p
+      
+    } else {
+      grid_plots[[idx]] <- plot_spacer()
+    }
+  }
+}
+
+p_final <- wrap_plots(grid_plots, ncol = n_vars) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Pairwise marginal predictions from krill centre of mass",
+    subtitle = "Lower triangle: Krill centre of mass | others held at their means"
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+p_final
