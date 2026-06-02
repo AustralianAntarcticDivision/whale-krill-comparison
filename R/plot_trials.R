@@ -661,3 +661,109 @@ p_final <- wrap_plots(grid_plots, ncol = n_vars) +
   )
 
 p_final
+#### add in the whale calls:
+AIC_base<-AIC(mcom_drop_solar_lunar)
+
+#add in Bm_Ant_ABZ
+mcom_drop_solar_lunar_Bm_Ant_ABZ<-update (mcom_drop_solar_lunar, .~.+s(Bm_Ant_ABZ,bs='cr',k=5))
+plot(mcom_drop_solar_lunar_Bm_Ant_ABZ,pages=1)
+summary(mcom_drop_solar_lunar_Bm_Ant_ABZ)
+concurvity(mcom_drop_solar_lunar_Bm_Ant_ABZ) #0.916 for Bm_Ant_ABZ is really high.
+#can't use Bm_Ant_ABZ
+
+#Bm_D: USE ME!
+
+mcom_drop_solar_lunar_Bm_D<- update (mcom_drop_solar_lunar, .~.+s(Bm_D,bs='cr',k=5))
+plot(mcom_drop_solar_lunar_Bm_D,pages=1)
+summary(mcom_drop_solar_lunar_Bm_D)
+concurvity(mcom_drop_solar_lunar_Bm_D) #all of these are fine.
+AIC(mcom_drop_solar_lunar_Bm_D) - AIC_base#lets keep Bm_D in AIC -17.1
+
+#BD
+mcom_drop_solar_lunar_BD<- update (mcom_drop_solar_lunar, .~.+s(BD,bs='cr',k=5))
+plot(mcom_drop_solar_lunar_BD,pages=1)
+summary(mcom_drop_solar_lunar_BD)
+concurvity(mcom_drop_solar_lunar_BD)
+AIC(mcom_drop_solar_lunar_BD) - AIC_base #not much improvement in AIC (-1.3)
+
+#BD + Bm_D
+mcom_drop_solar_lunar_BDplusBm_D<- update (mcom_drop_solar_lunar_BD, .~.+s(Bm_D,bs='cr',k=5))
+plot(mcom_drop_solar_lunar_BDplusBm_D,pages=1)
+summary(mcom_drop_solar_lunar_BDplusBm_D)
+concurvity(mcom_drop_solar_lunar_BDplusBm_D)
+AIC(mcom_drop_solar_lunar_BDplusBm_D) - AIC_base #its an improvement of only c. -1.2 so we'll keep the Bm_D model
+
+##############################################################################
+vars <- c("hour", "day_of_year", "ice","Bm_D")
+pairs <- combn(vars, 2, simplify = FALSE)
+
+
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mcom_drop_solar_lunar_Bm_D,dat=dat)) |> bind_rows()
+
+cat("Pairs computed:", length(pairs), "\n")
+cat("Total rows:", nrow(biv_df), "\n")
+
+z_rng<-range(biv_df$fit)
+library(patchwork)
+
+n_vars <- length(vars)
+
+# Build 4×4 grid: lower triangle = heatmap, diagonal = label, upper = spacer
+grid_plots <- vector("list", n_vars ^ 2)
+range(biv_df$fit)
+for (col in seq_len(n_vars)) {
+  for (row in seq_len(n_vars)) {
+    idx <- (row - 1) * n_vars + col
+    
+    if (row == col) {
+      grid_plots[[idx]] <- ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = short_labels[vars[row]], size = 3.5, fontface = "bold") +
+        theme_void()
+      
+    } else if (row > col) {
+      v1 <- vars[col]   # x-axis variable (column)
+      v2 <- vars[row]   # y-axis variable (row)
+      df <- biv_df |> filter(var1 == v1, var2 == v2)
+      
+      p <- ggplot(df, aes(x = .data[[v1]], y = .data[[v2]], fill = fit)) +
+        geom_raster(interpolate = TRUE) +
+        geom_contour(aes(z = fit), colour = "white", alpha = 0.5, linewidth = 0.3) +
+        #scale_fill_viridis_c(option = "magma", trans = "log", 
+        #                     limits=z_rng ,guide = "none") +
+        scale_fill_viridis_c(
+          option = "magma",
+          trans = "log",
+          limits = z_rng,
+          name = "Krill density",#centre\nof mass",
+          labels = scales::label_number(accuracy = 0.1)
+        )
+      theme_bw(base_size = 7) +
+        theme(axis.title  = element_blank(),
+              plot.margin = margin(2, 2, 2, 2))
+      
+      # Suppress axis text except on outer edges
+      if (row != n_vars) p <- p + theme(axis.text.x  = element_blank(),
+                                        axis.ticks.x = element_blank())
+      if (col != 1)      p <- p + theme(axis.text.y  = element_blank(),
+                                        axis.ticks.y = element_blank())
+      
+      grid_plots[[idx]] <- p
+      
+    } else {
+      grid_plots[[idx]] <- plot_spacer()
+    }
+  }
+}
+
+p_final <- wrap_plots(grid_plots, ncol = n_vars) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Pairwise marginal predictions from krill centre of mass",
+    subtitle = "Lower triangle: Krill centre of mass | others held at their means"
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+p_final
