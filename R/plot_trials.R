@@ -1,6 +1,6 @@
 # Marginal prediction plots for m1 (or any of the other models) 
 # Each predictor varied over its observed range; all others held at their means.
-
+library(gam.hp)
 #run whale_krill_GAMs.Rmd first.
 
 # Predictor means (used to hold non-focal variables constant)
@@ -154,7 +154,7 @@ make_bivariate <- function(var1, var2, n = 50,model,dat) {
 }
 
 pairs   <- combn(vars, 2, simplify = FALSE)
-biv_df  <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=m1)) |> bind_rows()
+biv_df  <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=m1,dat=dat)) |> bind_rows()
 
 short_labels <- c(
   hour        = "Hour",
@@ -294,7 +294,7 @@ ggplot(tile_df, aes(x = focal_var, y = season, fill = fit)) +
 vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice")
 pairs <- combn(vars, 2, simplify = FALSE)
 
-biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity)) |> bind_rows()
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity,dat=dat)) |> bind_rows()
 
 cat("Pairs computed:", length(pairs), "\n")
 cat("Total rows:", nrow(biv_df), "\n")
@@ -445,7 +445,7 @@ data.frame(
   )
 
 ################################################################################
-plot(mdensity)
+plot(mdensity,pages=1)
 #ice in mdensity is rubbish
 #see if we can use a linear form for ice.
 mdensity_Step=update(mdensity,select=TRUE)
@@ -494,6 +494,46 @@ summary(mdensity_whale_BDplusBm_D_ice)
 concurvity(mdensity_whale_BDplusBm_D_ice)
 AIC(mdensity_whale_BDplusBm_D_ice) - AIC(mdensity_whale_BDplusBm_D) #KEEP THIS ONE TOO
 
+#look at relative importance (krill density model)
+hp <- gam.hp(
+  mdensity_whale_BDplusBm_D_ice,
+  type = "dev"
+)
+
+hp
+plot(hp, plot.perc = TRUE)
+#calculate the proportion explained as a contribution to total deviance 
+hp_tab <- as.data.frame(hp$hierarchical.partitioning)
+
+total_dev_expl <- summary(
+  mdensity_whale_BDplusBm_D_ice
+)$dev.expl
+
+hp_tab$contribution_to_total_deviance <-
+  total_dev_expl * hp_tab$I.perc / 100
+
+hp_tab$percentage_total_dev=hp_tab$contribution_to_total_deviance *100
+rn<-row.names(hp_tab)
+f1=function(x){
+  if(substr(x,1,1)=='s'){
+    out<-strsplit(substr(x,3,nchar(x)),',')[[1]][1]
+    } else {
+  out=x}
+  return(out)}
+f2=Vectorize(f1)
+hp_tab$var_name<-f2(rn)
+#bar plot
+
+hp_tab<-hp_tab[order(hp_tab$percentage,decreasing=T),]
+hp_tab$var_nameF=factor(hp_tab$var_name,levels=hp_tab$var_name)
+ggplot(hp_tab,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
+  ylab('Percentage contribution to total deviance explained') + xlab('Explanatory variable') +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 16)
+  )
+
+ggsave(here::here('plots','krill density model relative contribution.png'))
 ##################################################################################
 
 vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice","BD","Bm_D")
@@ -767,3 +807,47 @@ p_final <- wrap_plots(grid_plots, ncol = n_vars) +
   )
 
 p_final
+
+##
+#look at relative importance (krill centre of mass model)
+hp<-NULL
+hp <- gam.hp(
+  mcom_drop_solar_lunar_Bm_D,
+  type = "dev"
+)
+
+hp
+plot(hp, plot.perc = TRUE)
+#calculate the proportion explained as a contribution to total deviance 
+hp_tab <- as.data.frame(hp$hierarchical.partitioning)
+
+total_dev_expl <- summary(
+  mcom_drop_solar_lunar_Bm_D
+)$dev.expl
+
+hp_tab$contribution_to_total_deviance <-
+  total_dev_expl * hp_tab$I.perc / 100
+
+hp_tab$percentage_total_dev=hp_tab$contribution_to_total_deviance *100
+rn<-row.names(hp_tab)
+f1=function(x){
+  if(substr(x,1,1)=='s'){
+    out<-strsplit(substr(x,3,nchar(x)),',')[[1]][1]
+  } else {
+    out=x}
+  return(out)}
+f2=Vectorize(f1)
+hp_tab$var_name<-f2(rn)
+#bar plot
+
+hp_tab<-hp_tab[order(hp_tab$percentage,decreasing=T),]
+hp_tab$var_nameF=factor(hp_tab$var_name,levels=hp_tab$var_name)
+ggplot(hp_tab,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
+  ylab('Percentage contribution to total deviance explained') + xlab('Explanatory variable') +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 16)
+  )
+
+ggsave(here::here('plots','krill centre of mass model relative contribution.png'))
+
