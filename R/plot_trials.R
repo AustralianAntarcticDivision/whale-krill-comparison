@@ -1,6 +1,10 @@
 # Marginal prediction plots for m1 (or any of the other models) 
 # Each predictor varied over its observed range; all others held at their means.
 library(gam.hp)
+library(ggplot2)
+library(mgcv)
+library(dplyr)
+library(patchwork)
 #run whale_krill_GAMs.Rmd first.
 
 # Predictor means (used to hold non-focal variables constant)
@@ -143,9 +147,10 @@ make_bivariate <- function(var1, var2, n = 50,model,dat) {
   v2_seq <- seq(min(dat[[var2]], na.rm = TRUE), max(dat[[var2]], na.rm = TRUE), length.out = n)
   
   grid <- expand.grid(v1 = v1_seq, v2 = v2_seq)
+  
   names(grid) <- c(var1, var2)
   for (v in setdiff(vars, c(var1, var2))) grid[[v]] <- means[[v]]
-  
+  print(head(grid))
   pr <- predict(model, newdata = grid, type = "link", se.fit = FALSE)
   grid$fit  <- exp(pr)
   grid$var1 <- var1
@@ -300,7 +305,7 @@ cat("Pairs computed:", length(pairs), "\n")
 cat("Total rows:", nrow(biv_df), "\n")
 
 z_rng<-range(biv_df$fit)
-library(patchwork)
+
 
 n_vars <- length(vars)
 
@@ -615,6 +620,12 @@ p_final <- wrap_plots(grid_plots, ncol = n_vars) +
 
 p_final
 
+#################################################
+#Compilation for MS figure:
+den_fig_list=list(solar_ice=grid_plots[[31]],
+                  solar_BD=grid_plots[[38]],
+                  solar_BmD=grid_plots[[45]])
+den_fig_list[[1]]+den_fig_list[[2]]+den_fig_list[[3]]+patchwork::plot_layout(nrow = 1)
 ##################################################
 #Centre of mass
 plot(mcom,pages=1) # suggest solar and lunar are U/S
@@ -733,12 +744,17 @@ summary(mcom_drop_solar_lunar_BDplusBm_D)
 concurvity(mcom_drop_solar_lunar_BDplusBm_D)
 AIC(mcom_drop_solar_lunar_BDplusBm_D) - AIC_base #its an improvement of only c. -1.2 so we'll keep the Bm_D model
 
+#add in BD + BmD into mcom
+mcom_plot <- update(mcom,.~.,select=TRUE)
+mcom_plot <- update(mcom_plot, .~.+s(BD,bs='cr',k=5)++s(Bm_D,bs='cr',k=5))
+plot(mcom_plot,pages=1)
 ##############################################################################
-vars <- c("hour", "day_of_year", "ice","Bm_D")
+
+vars <- c("hour", "day_of_year",'solar_lux','ice','lunar_lux','Bm_D','BD') #c("hour", "day_of_year", "ice","Bm_D")
 pairs <- combn(vars, 2, simplify = FALSE)
 
 
-biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mcom_drop_solar_lunar_Bm_D,dat=dat)) |> bind_rows()
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mcom_plot,dat=dat)) |> bind_rows()
 
 cat("Pairs computed:", length(pairs), "\n")
 cat("Total rows:", nrow(biv_df), "\n")
@@ -775,7 +791,7 @@ for (col in seq_len(n_vars)) {
           option = "magma",
           trans = "log",
           limits = z_rng,
-          name = "Krill density",#centre\nof mass",
+          name = "Krill centre\nof mass",
           labels = scales::label_number(accuracy = 0.1)
         )
       theme_bw(base_size = 7) +
@@ -806,7 +822,27 @@ p_final <- wrap_plots(grid_plots, ncol = n_vars) +
     legend.position = "right"
   )
 
-p_final
+
+
+#Compilation for MS figure:
+com_fig_list=list(solar_ice=p_final[[24]]+  theme_bw(),
+                  solar_BD=p_final[[45]]+  theme_bw(),
+                  solar_BmD=p_final[[38]]+   theme_bw())
+
+com_collect_plots<-wrap_plots(com_fig_list, ncol = 3) + plot_layout(guides='collect',
+                                                 axis_titles = 'collect') 
+
+den_fig_list[[1]]<-den_fig_list[[1]] + theme_bw()
+den_fig_list[[2]]<-den_fig_list[[2]] + theme_bw()
+den_fig_list[[3]]<-den_fig_list[[3]] + theme_bw()
+
+
+den_collect_plots<-wrap_plots(den_fig_list, ncol = 3) + plot_layout(guides='collect',
+                                                                    axis_titles = 'collect') 
+
+den_collect_plots /com_collect_plots
+
+ggsave(here::here('plots','density_and_com_comparison.png'))
 
 ##
 #look at relative importance (krill centre of mass model)
