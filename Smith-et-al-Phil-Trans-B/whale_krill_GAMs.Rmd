@@ -552,7 +552,9 @@ preds <- data.frame(
   day_of_year = 0:365,
   solar_lux   = mean(dat$solar_lux, na.rm = TRUE),
   lunar_lux   = mean(dat$lunar_lux, na.rm = TRUE),
-  ice         = mean(dat$ice,       na.rm = TRUE)
+  ice         = mean(dat$ice,       na.rm = TRUE),
+  BD = mean(dat$BD,na.rm=T),
+  Bm_D=mean(dat$Bm_D,na.rm=T)
 )
 
 preds_m1 <- as.data.frame(predict(m1, newdata = preds, type = "response", se.fit = TRUE))
@@ -614,8 +616,24 @@ mdensity <- gam(
 )
 summary(mdensity)
 gam.check(mdensity)
+concurvity(mdensity)
 
-# --- Centre of mass depth -----------------------------------------------------
+mdensity_BD<-update(mdensity, .~. + s(BD,k=6,bs='cr'))
+concurvity(mdensity_BD)
+summary(mdensity_BD)
+
+mdensity_BD_Bm_D<-update(mdensity_BD, .~. + s(Bm_D,k=6,bs='cr'))
+concurvity(mdensity_BD_Bm_D)
+summary(mdensity_BD_Bm_D)
+plot(mdensity_BD_Bm_D,pages=1)
+
+mdensity_BD_Bm_D_Bm_Ant_ABZ<-update(mdensity_BD_Bm_D, .~. + s(Bm_Ant_ABZ,k=6,bs='cr')) #I'd probably not put Bm_Ant_ABZ
+concurvity(mdensity_BD_Bm_D_Bm_Ant_ABZ)
+plot(mdensity_BD_Bm_D_Bm_Ant_ABZ,pages=1)
+#over write the mdensity model object with mdensity_BD_Bm_D
+mdensitySTORE <- mdensity
+mdensity <- mdensity_BD_Bm_D
+# --- Centre of mass depth -------------------Bm_D_rate# --- Centre of mass depth -----------------------------------------------------
 mcom <- gam(
   Center_of_mass ~
     s(hour,        k = 15, bs = "cc") +
@@ -632,6 +650,25 @@ mcom <- gam(
 )
 summary(mcom)
 gam.check(mcom)
+concurvity(mcom)
+
+mcom_BD<-update(mcom, .~. + s(BD,k=6,bs='cr'))
+concurvity(mcom_BD)
+summary(mcom_BD)
+
+mcom_BD_Bm_D<-update(mcom_BD, .~. + s(Bm_D,k=6,bs='cr'))
+concurvity(mcom_BD_Bm_D)
+summary(mcom_BD_Bm_D)
+plot(mcom_BD_Bm_D,pages=1)
+
+mcom_BD_Bm_D_Bm_Ant_ABZ<-update(mcom_BD_Bm_D, .~. + s(Bm_Ant_ABZ,k=6,bs='cr')) #I'd probably not put Bm_Ant_ABZ
+concurvity(mcom_BD_Bm_D_Bm_Ant_ABZ)
+plot(mcom_BD_Bm_D_Bm_Ant_ABZ,pages=1)
+
+#over write the mcom model object with mcom_BD_Bm_D
+mcomSTORE <- mcom
+mcom <- mcom_BD_Bm_D
+
 
 # --- Mean swarm thickness -----------------------------------------------------
 mthickness <- gam(
@@ -650,6 +687,26 @@ mthickness <- gam(
 )
 summary(mthickness)
 gam.check(mthickness)
+concurvity(mthickness)
+
+mthickness_BD<-update(mthickness, .~. + s(BD,k=6,bs='cr'))
+concurvity(mthickness_BD)
+summary(mthickness_BD)
+
+mthickness_BD_Bm_D<-update(mthickness_BD, .~. + s(Bm_D,k=6,bs='cr'))
+concurvity(mthickness_BD_Bm_D)
+summary(mthickness_BD_Bm_D)
+plot(mthickness_BD_Bm_D,pages=1)
+
+mthickness_BD_Bm_D_Bm_Ant_ABZ<-update(mthickness_BD_Bm_D, .~. + s(Bm_Ant_ABZ,k=6,bs='cr')) #I'd probably not put Bm_Ant_ABZ
+concurvity(mthickness_BD_Bm_D_Bm_Ant_ABZ)
+plot(mthickness_BD_Bm_D_Bm_Ant_ABZ,pages=1)
+
+#over write the mthickness model object with mthickness_BD_Bm_D
+mthicknessSTORE <- mthickness
+mthickness <- mthickness_BD_Bm_D
+
+
 
 # --- Combine all model predictions --------------------------------------------
 preds_mdensity <- as.data.frame(
