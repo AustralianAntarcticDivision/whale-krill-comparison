@@ -972,3 +972,208 @@ mgcv::vis.gam(m3,view = c('day_of_year','hour'),type='response',
 axis(1, at = season_starts, labels = season_labels, line = 3)  
 
 ```
+## Hierarchical partitioning - drivers of krill swarms 
+```{r}
+library(gam.hp)
+
+mods <- c("mdensity", "mcom", "mthickness")
+
+for (g in 1:length(mods)) {
+  thisgam <- get(mods[g])
+  
+  hp <- gam.hp(thisgam, type = "dev")
+  print(hp)
+  plot(hp, plot.perc = TRUE)
+  
+  hp_tab <- as.data.frame(hp$hierarchical.partitioning)
+  total_dev_expl <- summary(thisgam)$dev.expl
+  hp_tab$contribution_to_total_deviance <- total_dev_expl * hp_tab$I.perc / 100
+  hp_tab$percentage_total_dev <- hp_tab$contribution_to_total_deviance * 100
+  
+  rn <- row.names(hp_tab)
+  f1 <- function(x) {
+    if (substr(x, 1, 1) == 's') {
+      out <- strsplit(substr(x, 3, nchar(x)), ',')[[1]][1]
+    } else {
+      out <- x
+    }
+    return(out)
+  }
+  f2 <- Vectorize(f1)
+  hp_tab$var_name <- f2(rn)
+  
+  hp_tab_g <- hp_tab[order(hp_tab$percentage_total_dev, decreasing = TRUE), ]
+  hp_tab_g$var_nameF <- factor(hp_tab_g$var_name, levels = hp_tab_g$var_name)
+  
+  p <- ggplot(hp_tab_g, aes(var_nameF, percentage_total_dev)) +
+    geom_col(col = 'black', fill = 'lightgrey') +
+    theme_bw() +
+    ylab('Total deviance explained (%)') +
+    xlab('Explanatory variable') +
+    ggtitle(g) +
+    theme(
+      axis.title = element_text(size = 16),
+      axis.text = element_text(size = 16)
+    )
+  
+  ggsave(
+    here::here('plots', paste0(mods[g], '_relative_contribution.png')),
+    plot = p
+  )
+}
+```
+
+
+##Pairwise comparisons
+```{r}
+# --- Pairwise marginal prediction heatmaps -----------------------------------
+# For each pair of predictors, a 50×50 grid is evaluated; all other predictors
+# are held at their means. Fill is sqrt-scaled to reduce dominance of the
+# seasonal peak.
+
+# Predictor means (used to hold non-focal variables constant)
+means <- dat |>
+  summarise(across(c(hour, day_of_year, solar_lux, lunar_lux, ice, BD, Bm_D), mean, na.rm = TRUE))
+vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice", "BD", "Bm_D")
+
+make_bivariate <- function(var1, var2, n = 50,model,dat) {
+  v1_seq <- seq(min(dat[[var1]], na.rm = TRUE), max(dat[[var1]], na.rm = TRUE), length.out = n)
+  v2_seq <- seq(min(dat[[var2]], na.rm = TRUE), max(dat[[var2]], na.rm = TRUE), length.out = n)
+  
+  grid <- expand.grid(v1 = v1_seq, v2 = v2_seq)
+  
+  names(grid) <- c(var1, var2)
+  for (v in setdiff(vars, c(var1, var2))) grid[[v]] <- means[[v]]
+  print(head(grid))
+  pr <- predict(model, newdata = grid, type = "link", se.fit = FALSE)
+  grid$fit  <- exp(pr)
+  grid$var1 <- var1
+  grid$var2 <- var2
+  grid
+}
+
+
+```
+# Krill density
+```{r}
+library(patchwork)
+full_grids <- list()
+ms_rows <- list() 
+
+vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice","BD","Bm_D")
+means <- dat |>
+  summarise(across(c(hour, day_of_year, solar_lux, lunar_lux, ice, BD, Bm_D), mean, na.rm = TRUE))
+pairs <- combn(vars, 2, simplify = FALSE)
+
+short_labels <- c(
+  hour        = "Hour",
+  day_of_year = "Day of year",
+  solar_lux   = "Solar lux",
+  lunar_lux   = "Lunar lux",
+  ice         = "Ice", 
+  BD = "BD",
+  Bm_D = "Bm_D"
+)
+
+
+for (g in 1:length(mods)) {
+  thisgam <- get(mods[g])
+
+  biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],dat=dat,
+                                                   model=thisgam)) |> bind_rows()
+
+  cat("Pairs computed:", length(pairs), "\n")
+  cat("Total rows:", nrow(biv_df), "\n")
+
+  short_labels<-c(short_labels,c('BD','Bm_D'))
+  names(short_labels)[6:7]<-c('BD','Bm_D')
+  
+  z_rng<-range(biv_df$fit)
+  
+  n_vars <- length(vars)
+
+# Build 7×7 grid: lower triangle = heatmap, diagonal = label, upper = spacer
+grid_plots <- vector("list", n_vars ^ 2)
+range(biv_df$fit)
+for (col in seq_len(n_vars)) {
+  for (row in seq_len(n_vars)) {
+    idx <- (row - 1) * n_vars + col
+    
+    if (row == col) {
+      grid_plots[[idx]] <- ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = short_labels[vars[row]], size = 3.5, fontface = "bold") +
+        theme_void()
+      
+    } else if (row > col) {
+      v1 <- vars[col]   # x-axis variable (column)
+      v2 <- vars[row]   # y-axis variable (row)
+      df <- biv_df |> filter(var1 == v1, var2 == v2)
+      
+      p <- ggplot(df, aes(x = .data[[v1]], y = .data[[v2]], fill = fit)) +
+        geom_raster(interpolate = TRUE) +
+        geom_contour(aes(z = fit), colour = "white", alpha = 0.5, linewidth = 0.3) +
+        scale_fill_viridis_c(
+          option = "magma",
+          trans = "log",
+          limits = z_rng,
+          name = mods[g],
+          labels = scales::label_number(accuracy = 0.1)
+        )
+      theme_bw(base_size = 7) +
+        theme(axis.title  = element_blank(),
+              plot.margin = margin(2, 2, 2, 2))
+      
+      # Suppress axis text except on outer edges
+      if (row != n_vars) p <- p + theme(axis.text.x  = element_blank(),
+                                        axis.ticks.x = element_blank())
+      if (col != 1)      p <- p + theme(axis.text.y  = element_blank(),
+                                        axis.ticks.y = element_blank())
+      
+      grid_plots[[idx]] <- p
+      
+    } else {
+      grid_plots[[idx]] <- plot_spacer()
+    }
+  }
+}
+
+p_final <- wrap_plots(grid_plots, ncol = n_vars) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Pairwise marginal predictions from krill swarms",
+    subtitle = paste0(mods[g], " | other vars held at their means")
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+p_final
+
+#################################################
+#Compilation for MS figure:
+  full_grids[[mods[g]]] <- grid_plots  
+
+  # MS figure row for this model: solar_ice, solar_BD, solar_BmD
+  den_fig_list <- list(
+    solar_ice = grid_plots[[31]],
+    solar_BD  = grid_plots[[38]],
+    solar_BmD = grid_plots[[45]]
+  )
+
+  ms_rows[[mods[g]]] <- den_fig_list[[1]] + den_fig_list[[2]] + den_fig_list[[3]] +
+    plot_layout(nrow = 1)
+}
+
+# Stack the three models' rows into one combined MS figure
+ms_combined <- ms_rows[[mods[1]]] / ms_rows[[mods[2]]] / ms_rows[[mods[3]]] +
+  plot_annotation(
+    title = "Solar illuminance interactions across krill swarm metrics",
+    tag_levels = "A"
+  )
+
+ms_combined
+ggsave(here::here('plots','krill interactions.png'))
+
+```
+

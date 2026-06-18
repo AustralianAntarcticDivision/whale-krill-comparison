@@ -250,7 +250,7 @@ focal_labels  <- c(
 )
 season_levels <- c("Summer", "Autumn", "Winter", "Spring")
 overall_means <- dat |>
-  summarise(across(c(hour, solar_lux, lunar_lux, ice), mean, na.rm = TRUE))
+  summarise(across(c(hour, solar_lux, lunar_lux, ice, BD, Bm_D), mean, na.rm = TRUE))
 
 tile_df <- crossing(season = season_levels, focal_var = focal_vars) |>
   pmap_dfr(function(season, focal_var) {
@@ -296,7 +296,7 @@ ggplot(tile_df, aes(x = focal_var, y = season, fill = fit)) +
 ################################################
 
 
-vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice")
+vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice", "BD", "Bm_D")
 pairs <- combn(vars, 2, simplify = FALSE)
 
 biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity,dat=dat)) |> bind_rows()
@@ -529,10 +529,10 @@ f2=Vectorize(f1)
 hp_tab$var_name<-f2(rn)
 #bar plot
 
-hp_tab<-hp_tab[order(hp_tab$percentage,decreasing=T),]
-hp_tab$var_nameF=factor(hp_tab$var_name,levels=hp_tab$var_name)
-ggplot(hp_tab,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
-  ylab('Percentage contribution to total deviance explained') + xlab('Explanatory variable') +
+hp_tab_den<-hp_tab[order(hp_tab$percentage,decreasing=T),]
+hp_tab_den$var_nameF=factor(hp_tab_den$var_name,levels=hp_tab_den$var_name)
+pdensity <- ggplot(hp_tab_den,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
+  ylab('Total deviance explained (%)') + xlab('Explanatory variable') + ggtitle("Swarm density")+
   theme(
     axis.title = element_text(size = 16),
     axis.text = element_text(size = 16)
@@ -848,7 +848,7 @@ ggsave(here::here('plots','density_and_com_comparison.png'))
 #look at relative importance (krill centre of mass model)
 hp<-NULL
 hp <- gam.hp(
-  mcom_drop_solar_lunar_Bm_D,
+  mcom_plot,
   type = "dev"
 )
 
@@ -876,10 +876,10 @@ f2=Vectorize(f1)
 hp_tab$var_name<-f2(rn)
 #bar plot
 
-hp_tab<-hp_tab[order(hp_tab$percentage,decreasing=T),]
-hp_tab$var_nameF=factor(hp_tab$var_name,levels=hp_tab$var_name)
-ggplot(hp_tab,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
-  ylab('Percentage contribution to total deviance explained') + xlab('Explanatory variable') +
+hp_tab_com<-hp_tab[order(hp_tab$percentage,decreasing=T),]
+hp_tab_com$var_nameF=factor(hp_tab_com$var_name,levels=hp_tab_com$var_name)
+pcom <-  ggplot(hp_tab_com,aes(var_nameF,percentage_total_dev)) + geom_col(col='black',fill='lightgrey') + theme_bw() +
+  ylab('Total deviance explained (%)') + xlab('Explanatory variable') + ggtitle("Centre of Mass")+
   theme(
     axis.title = element_text(size = 16),
     axis.text = element_text(size = 16)
