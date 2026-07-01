@@ -99,8 +99,8 @@ Classify each hour into one of four mutually exclusive predator states.
 # --- Seasonal false positive rates (from Table S1) ----------------------------
 # Rates vary by month; applied as thresholds relative to maximum call counts
 Bm_Ant_ABZ_rate <- c(rep(0.040, 2), rep(0.556, 3), rep(0.500, 3), rep(0.154, 3), 0.040)
-Bm_D_rate       <- c(rep(0.017, 2), rep(1,     3), rep(0.476, 3), rep(0.021, 3), 0.017)
-BD_rate         <- c(rep(1,     2), rep(0.077, 3), rep(0.202, 3), rep(0.159, 3), 1    )
+Bm_D_rate       <- c(rep(0.017, 2), rep(0,     3), rep(0.476, 3), rep(0.021, 3), 0.017)
+BD_rate         <- c(rep(0,     2), rep(0.077, 3), rep(0.202, 3), rep(0.159, 3), 0    )
 
 seasonal_fpr <- data.frame(
   month           = 1:12,
@@ -1174,6 +1174,59 @@ ms_combined <- ms_rows[[mods[1]]] / ms_rows[[mods[2]]] / ms_rows[[mods[3]]] +
 
 ms_combined
 ggsave(here::here('plots','krill interactions.png'))
+
+```
+## Recall sensitivity analysis
+```{r}
+#Based on min and max recall values from 
+
+#Literature values
+minR_bmd = 0.64 #Miller et al 2022 #https://zslpublications.onlinelibrary.wiley.com/doi/full/10.1002/rse2.297
+maxR_bmd = 0.99  #Miller et al 2022 #https://zslpublications.onlinelibrary.wiley.com/doi/full/10.1002/rse2.297
+minR_abz = 0.4 # Miller et al 2026 #https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210x.70331
+maxR_abz = 0.8 # Miller et al 2026 #https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210x.70331
+minR_bd = 0.78 #Summer, https://onlinelibrary.wiley.com/doi/10.1111/mms.70118
+maxR_bd = 0.87 #Winter, https://onlinelibrary.wiley.com/doi/10.1111/mms.70118
+
+
+
+#minR_bmd = 0.24 
+#maxR_bmd = 0.99
+#minR_abz = 0.195 
+#maxR_abz = 0.99
+#minR_bd = 0.78 #Summer, https://onlinelibrary.wiley.com/doi/10.1111/mms.70118
+#maxR_bd = 0.87 #Winter, https://onlinelibrary.wiley.com/doi/10.1111/mms.70118
+
+SA <- c()
+SA <- dat %>%
+  mutate(
+    Bm_Ant_ABZ_minR = (Bm_Ant_ABZ * (1 - Bm_Ant_ABZ_rate)) / minR_abz,
+    Bm_D_minR       = (Bm_D       * (1 - Bm_D_rate))       / minR_bmd,
+    BD_minR         = (BD         * (1 - BD_rate))         / minR_bd,
+    Bm_Ant_ABZ_maxR = (Bm_Ant_ABZ * (1 - Bm_Ant_ABZ_rate)) / maxR_abz,
+    Bm_D_maxR       = (Bm_D       * (1 - Bm_D_rate))       / maxR_bmd,
+    BD_maxR         = (BD         * (1 - BD_rate))         / maxR_bd
+  )
+
+ABZrecall <- ggplot(data = SA)+
+  geom_point(aes(x=timeStamp, y=Bm_Ant_ABZ, colour = 'Raw'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=Bm_Ant_ABZ_minR,  colour = 'R = MIN'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=Bm_Ant_ABZ_maxR,  colour = 'R = MAX'), size = 0.8, alpha = 0.3)+
+  theme_minimal()
+
+Bm_Drecall <- ggplot(data = SA)+
+  geom_point(aes(x=timeStamp, y=Bm_D, colour = 'Raw'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=Bm_D_minR,  colour = 'R = MIN'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=Bm_D_maxR,  colour = 'R = MAX'), size = 0.8, alpha = 0.3)+
+  theme_minimal()
+
+BDrecall <- ggplot(data = SA)+
+  geom_point(aes(x=timeStamp, y=BD, colour = 'Raw'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=BD_minR,  colour = 'R = MIN'), size = 0.8, alpha = 0.3)+
+  geom_point(aes(x=timeStamp, y=BD_maxR,  colour = 'R = MAX'), size = 0.8, alpha = 0.3)+
+  theme_minimal()
+
+ABZrecall / Bm_Drecall / BDrecall
 
 ```
 
