@@ -5,6 +5,8 @@ library(ggplot2)
 library(mgcv)
 library(dplyr)
 library(patchwork)
+library(tidyr)
+library(purrr)
 #run whale_krill_GAMs.Rmd first.
 
 # Predictor means (used to hold non-focal variables constant)
@@ -142,7 +144,13 @@ ggplot(doy_dates, aes(date, fit)) +
 # are held at their means. Fill is sqrt-scaled to reduce dominance of the
 # seasonal peak.
 
-make_bivariate <- function(var1, var2, n = 50,model,dat) {
+make_bivariate <- function(var1, var2, 
+                           n = 50, 
+                           model, 
+                           dat, 
+                           vars = vars){#get("vars", envir = globalenv())) {
+  # Means computed from `dat` so they always cover every variable in `vars`
+  means <- lapply(dat[vars], mean, na.rm = TRUE)
   v1_seq <- seq(min(dat[[var1]], na.rm = TRUE), max(dat[[var1]], na.rm = TRUE), length.out = n)
   v2_seq <- seq(min(dat[[var2]], na.rm = TRUE), max(dat[[var2]], na.rm = TRUE), length.out = n)
   
@@ -150,7 +158,6 @@ make_bivariate <- function(var1, var2, n = 50,model,dat) {
   
   names(grid) <- c(var1, var2)
   for (v in setdiff(vars, c(var1, var2))) grid[[v]] <- means[[v]]
-  print(head(grid))
   pr <- predict(model, newdata = grid, type = "link", se.fit = FALSE)
   grid$fit  <- exp(pr)
   grid$var1 <- var1
@@ -299,7 +306,7 @@ ggplot(tile_df, aes(x = focal_var, y = season, fill = fit)) +
 vars <- c("hour", "day_of_year", "solar_lux", "lunar_lux", "ice", "BD", "Bm_D")
 pairs <- combn(vars, 2, simplify = FALSE)
 
-biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity,dat=dat)) |> bind_rows()
+biv_df <- lapply(pairs, function(p) make_bivariate(p[1], p[2],model=mdensity,dat=dat,vars=vars)) |> bind_rows()
 
 cat("Pairs computed:", length(pairs), "\n")
 cat("Total rows:", nrow(biv_df), "\n")
@@ -470,6 +477,12 @@ summary(mdensity_Step_Bm_Ant_ABZ)
 concurvity(mdensity_Step_Bm_Ant_ABZ)
 AIC(mdensity_Step_Bm_Ant_ABZ) - AIC(mdensity_snas_ice) #no improvement in AIC
 #no point in keeping mdensity_Step_Bm_Ant_ABZ
+
+#check if a different error distribution helps, prediction/fit:
+#Tweedie (estimating the power parameter):
+summary(update(mdensity_Step_Bm_Ant_ABZ,family=tw())) #nope
+#and negative binomial (estimating theta):
+summary(update(mdensity_Step_Bm_Ant_ABZ,family=nb())) #nope
 
 #Bm_D:
 mdensity_whale_Bm_D<- update (mdensity_snas_ice, .~.+s(Bm_D,bs='cr',k=5))
