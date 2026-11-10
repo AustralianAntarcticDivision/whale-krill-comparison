@@ -480,9 +480,19 @@ AIC(mdensity_Step_Bm_Ant_ABZ) - AIC(mdensity_snas_ice) #no improvement in AIC
 
 #check if a different error distribution helps, prediction/fit:
 #Tweedie (estimating the power parameter):
-summary(update(mdensity_Step_Bm_Ant_ABZ,family=tw())) #nope
+mdensity_Step_Bm_Ant_ABZ_tw<-summary(update(mdensity_Step_Bm_Ant_ABZ,family=tw())) #nope
 #and negative binomial (estimating theta):
-summary(update(mdensity_Step_Bm_Ant_ABZ,family=nb())) #nope
+mdensity_Step_Bm_Ant_ABZ_nb<-summary(update(mdensity_Step_Bm_Ant_ABZ,family=nb())) #nope
+
+stat_tw<-data.frame(Family='Tweedie',
+                    Distribution_par=mdensity_Step_Bm_Ant_ABZ_tw$family[1],
+                    deviance_explained=round(100*mdensity_Step_Bm_Ant_ABZ_tw$dev.expl,1),
+                    R2adj=round(mdensity_Step_Bm_Ant_ABZ_tw$r.sq,2))
+stat_nb<-data.frame(Family='Negative binomial',
+                    Distribution_par=mdensity_Step_Bm_Ant_ABZ_nb$family[1],
+                    deviance_explained=round(100*mdensity_Step_Bm_Ant_ABZ_nb$dev.expl,1),
+                    R2adj=round(mdensity_Step_Bm_Ant_ABZ_nb$r.sq,2))
+
 
 #Bm_D:
 mdensity_whale_Bm_D<- update (mdensity_snas_ice, .~.+s(Bm_D,bs='cr',k=5))
