@@ -493,6 +493,8 @@ stat_nb<-data.frame(Family='Negative binomial',
                     deviance_explained=round(100*mdensity_Step_Bm_Ant_ABZ_nb$dev.expl,1),
                     R2adj=round(mdensity_Step_Bm_Ant_ABZ_nb$r.sq,2))
 
+#hurdle
+mdensity_Step_Bm_Ant_ABZ
 
 #Bm_D:
 mdensity_whale_Bm_D<- update (mdensity_snas_ice, .~.+s(Bm_D,bs='cr',k=5))
